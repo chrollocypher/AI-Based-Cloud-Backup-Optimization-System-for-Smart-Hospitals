@@ -119,7 +119,8 @@ What makes this project different from existing work:
 
 ## 8. Architecture Diagrams
 
-<img width="554" height="343" alt="Screenshot 2026-07-31 223604" src="https://github.com/user-attachments/assets/e09d41ed-0640-4632-848b-e162d2d38828" />
+<img width="900" height="572" alt="image" src="https://github.com/user-attachments/assets/7430ffdc-1633-490a-a829-cd664293bac4" />
+
 
 
 ---
