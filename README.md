@@ -126,7 +126,8 @@ What makes this project different from existing work:
 ---
 ## 8. FrameWork Diagram
 
-<img width="900" height="572" alt="image" src="https://github.com/user-attachments/assets/44d2460e-52d9-4b1c-a3fb-870ad04c0d88" />
+<img width="900" height="846" alt="image" src="https://github.com/user-attachments/assets/3d9251c9-f05d-421e-873a-4d66fbc4c62d" />
+
 
 ---
 
