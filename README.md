@@ -117,11 +117,16 @@ What makes this project different from existing work:
 
 ---
 
-## 8. Architecture Diagrams
+## 8. Architecture Diagram
 
 <img width="900" height="572" alt="image" src="https://github.com/user-attachments/assets/7430ffdc-1633-490a-a829-cd664293bac4" />
 
 
+
+---
+## 8. FrameWork Diagram
+
+<img width="1105" height="1039" alt="image" src="https://github.com/user-attachments/assets/44d2460e-52d9-4b1c-a3fb-870ad04c0d88" />
 
 ---
 
