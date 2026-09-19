@@ -28,17 +28,14 @@ def main():
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
     data_path = os.path.join(base_dir, 'dataset', 'processed', 'workload_timeseries_1h.csv')
     
-    # 1. Load data
-    _, _, test_data, _ = load_and_split_data(data_path)
+    lookback = 24
     
-    # Note: The prompt specifies "Use the original workload values in MB for evaluation, not scaled values."
-    # We will NOT use the scaler here, just raw values.
+    # 1. Load data
+    _, _, test_data, _ = load_and_split_data(data_path, lookback=lookback)
     
     # 2. Create Sequences
-    lookback = 24
     X_test, y_test = create_sequences(test_data, lookback)
     
-    # Flatten y_test for easier metric calculation
     y_true = y_test.flatten()
     
     # 3. Naive Baseline
@@ -50,13 +47,9 @@ def main():
     ma_mae, ma_rmse, ma_mape, ma_exc = calculate_metrics(y_true, ma_preds)
     
     # 5. Report
-    print("Baseline Evaluation Results (Test Set, Original MB values)")
-    print("-" * 75)
-    print(f"{'Model':<20} | {'MAE (MB)':<10} | {'RMSE (MB)':<10} | {'MAPE (%)':<10} | {'Excluded':<10}")
-    print("-" * 75)
+    print(f"Baselines Test Predictions: {len(y_true)}")
     print(f"{'Naive':<20} | {naive_mae:<10.2f} | {naive_rmse:<10.2f} | {naive_mape:<10.2f} | {naive_exc:<10}")
     print(f"{'Moving Average (24h)':<20} | {ma_mae:<10.2f} | {ma_rmse:<10.2f} | {ma_mape:<10.2f} | {ma_exc:<10}")
-    print("-" * 75)
 
 if __name__ == '__main__':
     main()
