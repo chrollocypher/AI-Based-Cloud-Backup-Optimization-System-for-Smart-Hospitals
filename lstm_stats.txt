@@ -1,0 +1,3 @@
+Parameters: 16961
+Epochs trained: 44
+Best validation loss: 0.0025
