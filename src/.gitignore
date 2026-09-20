@@ -1,0 +1,37 @@
+# Python bytecode & runtime cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Pytest & Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables & local secrets
+.env
+*.env
+
+# Python Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Node.js / Frontend build & dependency artifacts
+node_modules/
+.next/
+dist/
+build/
+.cache/
+
+# IDE & Editor configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating System files
+.DS_Store
+Thumbs.db
