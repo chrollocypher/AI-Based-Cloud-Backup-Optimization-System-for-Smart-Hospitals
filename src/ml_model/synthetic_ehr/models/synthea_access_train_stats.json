@@ -1,0 +1,9 @@
+{
+  "target_column": "access_workload_mb",
+  "total_samples": 2421,
+  "lookback_days": 14,
+  "epochs_trained": 50,
+  "best_epoch": 40,
+  "best_val_loss": 0.015397119335830212,
+  "model_parameters": 10801
+}

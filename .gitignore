@@ -1,1 +1,56 @@
-.venv-ml
+# Virtual Environments
+.venv/
+.venv-ml/
+venv/
+env/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Preserved Models Policy:
+# Do not globally ignore models/ or *.keras, as the approved Synthea checkpoints
+# (src/ml_model/synthetic_ehr/models/best_synthea_backup_lstm.keras and
+#  src/ml_model/synthetic_ehr/models/best_synthea_access_lstm.keras)
+# are essential artifacts of the approved ML pipeline.

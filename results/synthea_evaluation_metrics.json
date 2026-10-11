@@ -1,0 +1,86 @@
+{
+  "backup_workload": {
+    "test_samples": 364,
+    "lookback_days": 14,
+    "models": {
+      "LSTM": {
+        "MAE_mb": 25.93,
+        "RMSE_mb": 35.72,
+        "WAPE_pct": 81.83,
+        "MAPE_filtered_pct": 195.64
+      },
+      "Baseline_Naive_Persistence": {
+        "MAE_mb": 33.99,
+        "RMSE_mb": 51.21,
+        "WAPE_pct": 107.27,
+        "MAPE_filtered_pct": 187.81
+      },
+      "Baseline_7Day_Moving_Average": {
+        "MAE_mb": 28.53,
+        "RMSE_mb": 39.68,
+        "WAPE_pct": 90.02,
+        "MAPE_filtered_pct": 178.71
+      }
+    },
+    "winners": {
+      "MAE_mb": {
+        "best_model": "LSTM",
+        "best_value": 25.93
+      },
+      "RMSE_mb": {
+        "best_model": "LSTM",
+        "best_value": 35.72
+      },
+      "WAPE_pct": {
+        "best_model": "LSTM",
+        "best_value": 81.83
+      },
+      "MAPE_filtered_pct": {
+        "best_model": "Baseline_7Day_Moving_Average",
+        "best_value": 178.71
+      }
+    }
+  },
+  "access_workload": {
+    "test_samples": 364,
+    "lookback_days": 14,
+    "models": {
+      "LSTM": {
+        "MAE_mb": 25.68,
+        "RMSE_mb": 36.19,
+        "WAPE_pct": 76.01,
+        "MAPE_filtered_pct": 163.02
+      },
+      "Baseline_Naive_Persistence": {
+        "MAE_mb": 35.86,
+        "RMSE_mb": 53.29,
+        "WAPE_pct": 106.14,
+        "MAPE_filtered_pct": 184.87
+      },
+      "Baseline_7Day_Moving_Average": {
+        "MAE_mb": 29.96,
+        "RMSE_mb": 41.14,
+        "WAPE_pct": 88.68,
+        "MAPE_filtered_pct": 176.43
+      }
+    },
+    "winners": {
+      "MAE_mb": {
+        "best_model": "LSTM",
+        "best_value": 25.68
+      },
+      "RMSE_mb": {
+        "best_model": "LSTM",
+        "best_value": 36.19
+      },
+      "WAPE_pct": {
+        "best_model": "LSTM",
+        "best_value": 76.01
+      },
+      "MAPE_filtered_pct": {
+        "best_model": "LSTM",
+        "best_value": 163.02
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "target_column": "backup_workload_mb",
+  "total_samples": 2421,
+  "lookback_days": 14,
+  "epochs_trained": 50,
+  "best_epoch": 49,
+  "best_val_loss": 0.015243329107761383,
+  "model_parameters": 10801
+}

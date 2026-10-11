@@ -1,0 +1,6 @@
+# Core Machine Learning & Data Pipeline Requirements
+# Exact pinned dependency versions verified on Python 3.11.9 (.venv-ml)
+
+tensorflow==2.21.0
+pandas==3.0.6
+numpy==2.4.6
