@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # ML Model & Dataset Settings
     MODEL_PATH: str = "src/ml_model/models/best_lstm_model.keras"
+    ACCESS_MODEL_PATH: str = "src/ml_model/models/best_access_bilstm.keras"
     WORKLOAD_DATA_PATH: str = "dataset/processed/workload_timeseries_1h.csv"
 
     model_config = SettingsConfigDict(

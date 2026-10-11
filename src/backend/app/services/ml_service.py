@@ -13,26 +13,30 @@ from app.core.logging import logger
 
 
 class MLService:
-    """Service bridge integrating backend with the trained Keras LSTM workload forecasting model
-
-    and decision pipeline.
+    """Service bridge integrating backend with:
+    1. Preserved Keras LSTM for hourly backup-volume forecasting.
+    2. Access-demand forecasting (BiLSTM / LSTM adapter for Member A).
+    3. Decision pipeline for priority scheduling and tier allocation.
     """
 
     def __init__(self):
-        self.model = None
+        self.model = None  # Preserved backup volume LSTM model
+        self.access_model = None  # New access-demand model (BiLSTM/LSTM)
         self.scaler = None
         self.historical_data: Optional[np.ndarray] = None
         self.is_initialized = False
+        self.is_access_initialized = False
         self._initialize()
 
     def _initialize(self):
-        """Loads model and fits scaler on historical training workload data."""
+        """Loads backup model, access model, and fits scaler on historical training workload data."""
         try:
             from src.ml_model.preprocessing.scaler import WorkloadScaler
             from src.ml_model.preprocessing.data_loader import load_and_split_data
             import tensorflow as tf
 
             model_full_path = os.path.join(PROJECT_ROOT, settings.MODEL_PATH)
+            access_model_full_path = os.path.join(PROJECT_ROOT, settings.ACCESS_MODEL_PATH)
             data_full_path = os.path.join(PROJECT_ROOT, settings.WORKLOAD_DATA_PATH)
 
             if os.path.exists(data_full_path):
@@ -51,23 +55,31 @@ class MLService:
                 self.scaler.scale_ = np.array([10000.0])
                 self.historical_data = np.full(24, 1200.0)
 
+            # 1. Preserved Backup LSTM Checkpoint
             if os.path.exists(model_full_path):
                 self.model = tf.keras.models.load_model(model_full_path)
                 self.is_initialized = True
-                logger.info(f"Successfully loaded trained Keras LSTM model from {model_full_path}")
+                logger.info(f"Successfully loaded preserved Keras LSTM backup model from {model_full_path}")
             else:
-                logger.warning(f"Keras model file not found at {model_full_path}. Local model inference will fallback.")
+                logger.warning(f"Backup Keras model file not found at {model_full_path}. Backup inference will fallback.")
+
+            # 2. Access Demand Model Checkpoint (Member A)
+            if os.path.exists(access_model_full_path):
+                self.access_model = tf.keras.models.load_model(access_model_full_path)
+                self.is_access_initialized = True
+                logger.info(f"Successfully loaded access-demand model from {access_model_full_path}")
+            else:
+                logger.info(f"Access model file not yet found at {access_model_full_path}. Using access adapter estimation.")
         except Exception as e:
             logger.warning(f"Failed to initialize ML engine ({e}). Falling back to statistical estimation.")
             self.is_initialized = False
 
     def predict_workload(self, historical_24h: Optional[np.ndarray] = None) -> Tuple[float, str]:
-        """Predicts workload forecast (in MB) for next 1-hour window using LSTM model."""
+        """Predicts backup volume forecast (in MB) for next 1-hour window using preserved LSTM model."""
         if historical_24h is None:
             historical_24h = self.historical_data if self.historical_data is not None else np.full(24, 1200.0)
 
         if len(historical_24h) != 24:
-            # Re-pad or truncate to 24
             if len(historical_24h) < 24:
                 padding = np.full(24 - len(historical_24h), historical_24h[-1] if len(historical_24h) > 0 else 1000.0)
                 historical_24h = np.concatenate([padding, historical_24h])
@@ -90,6 +102,48 @@ class MLService:
         # Statistical fallback estimation if model load failed
         last_obs = float(historical_24h[-1]) if len(historical_24h) > 0 else 1500.0
         return round(last_obs * 1.08, 2), "baseline-trend-v1"
+
+    def predict_access_demand(
+        self,
+        current_access_count: int = 1200,
+        current_access_volume_mb: float = 15400.0,
+        recent_counts: Optional[List[int]] = None,
+        emergency_ratio: float = 0.05
+    ) -> Tuple[int, float, int, str]:
+        """Predicts EHR access demand (count, volume MB, emergency count) for next hour.
+
+        Uses Member A's loaded model or adaptive autoregressive adapter.
+        """
+        if self.is_access_initialized and self.access_model is not None:
+            try:
+                # If Member A provides trained access model
+                seq = np.array(recent_counts if recent_counts else [current_access_count] * 24, dtype=float)
+                if len(seq) < 24:
+                    seq = np.pad(seq, (24 - len(seq), 0), mode="edge")
+                else:
+                    seq = seq[-24:]
+                inp = seq.reshape(1, 24, 1)
+                pred = self.access_model.predict(inp, verbose=0)
+                pred_count = max(0, int(round(float(pred[0, 0]))))
+                pred_volume = round(pred_count * (current_access_volume_mb / max(current_access_count, 1)), 2)
+                pred_emergency = max(0, int(round(pred_count * emergency_ratio)))
+                return pred_count, pred_volume, pred_emergency, "bilstm-access-ml-v1"
+            except Exception as e:
+                logger.warning(f"Error in access-demand model inference: {e}. Falling back to adapter.")
+
+        # Adaptive autoregressive estimation
+        if recent_counts and len(recent_counts) >= 3:
+            weights = np.linspace(0.5, 1.0, len(recent_counts[-6:]))
+            weights /= weights.sum()
+            avg_count = float(np.dot(recent_counts[-6:], weights))
+            growth = 1.02 if recent_counts[-1] > recent_counts[-2] else 0.98
+            pred_count = max(50, int(round(avg_count * growth)))
+        else:
+            pred_count = max(50, int(round(current_access_count * 1.05)))
+
+        pred_volume = round(pred_count * (current_access_volume_mb / max(current_access_count, 1)), 2)
+        pred_emergency = max(0, int(round(pred_count * emergency_ratio)))
+        return pred_count, pred_volume, pred_emergency, "access-demand-adapter-v1"
 
     def execute_decision_pipeline(
         self,
