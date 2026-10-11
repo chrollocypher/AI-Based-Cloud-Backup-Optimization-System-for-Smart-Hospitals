@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # DynamoDB Table Names
     DYNAMODB_TABLE_RECORDS: str = "SmartHospitalRecords"
     DYNAMODB_TABLE_JOBS: str = "SmartHospitalBackupJobs"
+    DYNAMODB_TABLE_ACCESS_EVENTS: str = "SmartHospitalAccessEvents"
+    DYNAMODB_TABLE_RETRIEVALS: str = "SmartHospitalRetrievalJobs"
 
     # Step Functions & SageMaker
     STEP_FUNCTION_ARN: str = "arn:aws:states:us-east-1:123456789012:stateMachine:SmartHospitalBackupPipeline"
