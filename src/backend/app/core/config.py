@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Operational Thresholds
     CAPACITY_THRESHOLD_MB: float = 10000.0
 
+    # ML Model & Dataset Settings
+    MODEL_PATH: str = "src/ml_model/models/best_lstm_model.keras"
+    WORKLOAD_DATA_PATH: str = "dataset/processed/workload_timeseries_1h.csv"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

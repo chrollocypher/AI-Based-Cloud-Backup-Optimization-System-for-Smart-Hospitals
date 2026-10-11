@@ -50,11 +50,9 @@ class PredictionService:
         return pred_response
 
     def _local_lstm_inference(self, req: PredictionRequest) -> tuple[float, str]:
-        """Local LSTM mock / trend estimation engine."""
-        # Forecast workload trend based on current data volume & access frequency
-        growth_factor = 1.15 + (req.access_frequency / 2000.0)
-        predicted_volume = req.data_volume_mb * growth_factor
-        return predicted_volume, "local-lstm-v1"
+        """Local LSTM workload forecasting engine via MLService."""
+        from app.services.ml_service import ml_service
+        return ml_service.predict_workload()
 
     def get_latest_prediction(self) -> PredictionResponse:
 

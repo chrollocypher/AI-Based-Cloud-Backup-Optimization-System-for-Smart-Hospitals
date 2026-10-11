@@ -13,64 +13,50 @@ class SmartScheduler:
         self._last_schedule: Optional[ScheduleResponse] = None
 
     def generate_schedule(self) -> ScheduleResponse:
-        """Generates backup schedule based on LSTM predictions, priority scoring, and capacity limits."""
+        """Generates backup schedule based on ML decision pipeline (LSTM workload forecast, priority scoring, and capacity limits)."""
+        from app.services.ml_service import ml_service
+
         # 1. Fetch pending records
         all_records = [r.model_dump() for r in record_service.list_records()]
         pending_records = [r for r in all_records if r.get("backup_status") == "PENDING"]
 
-        # 2. Sort by Priority Engine
-        prioritized = prioritize_records(pending_records)
+        # 2. Execute full ML decision pipeline
+        pipeline_res = ml_service.execute_decision_pipeline(pending_records)
 
-        # 3. Get latest workload forecast
-        prediction = prediction_service.get_latest_prediction()
-        predicted_mb = prediction.predicted_backup_volume_mb
+        predicted_mb = round(float(pipeline_res["predicted_workload_mb"]), 2)
         threshold_mb = settings.CAPACITY_THRESHOLD_MB
         is_exceeded = predicted_mb > threshold_mb
 
+        scheduled_now = pipeline_res["scheduled_records"]
+        deferred = pipeline_res["deferred_records"]
+
         schedule_items: List[ScheduleItem] = []
-        now_count = 0
-        deferred_count = 0
 
-        accumulated_mb = 0.0
-
-        for rec in prioritized:
-            crit = rec.get("criticality", "MEDIUM")
-            size = rec.get("data_size_mb", 10.0)
-
-            if is_exceeded:
-                # Capacity limit exceeded - enforce strict priority throttling
-                if crit == "CRITICAL":
-                    action = "BACKUP_NOW"
-                    reason = "Critical hospital record - immediate backup required"
-                    now_count += 1
-                elif crit == "HIGH" and (accumulated_mb + size) <= threshold_mb:
-                    action = "BACKUP_NOW"
-                    reason = "High priority scan within capacity allocation"
-                    now_count += 1
-                    accumulated_mb += size
-                elif crit in ["HIGH", "MEDIUM"]:
-                    action = "BACKUP_NEXT"
-                    reason = "High workload forecasted - queued for next iteration"
-                else:
-                    action = "DEFER"
-                    reason = "Low urgency - deferred to off-peak network window"
-                    deferred_count += 1
-            else:
-                # Normal operational load - process all records
-                action = "BACKUP_NOW"
-                reason = "Normal system workload - scheduled for immediate backup"
-                now_count += 1
-
+        for rec in scheduled_now:
             schedule_items.append(
                 ScheduleItem(
                     record_id=rec["record_id"],
-                    record_type=rec["record_type"],
-                    department=rec["department"],
-                    criticality=crit,
-                    priority_score=rec["priority_score"],
-                    data_size_mb=size,
-                    action=action,
-                    reason=reason
+                    record_type=rec.get("record_type", "UNKNOWN"),
+                    department=rec.get("department", "General"),
+                    criticality=rec.get("criticality", "MEDIUM"),
+                    priority_score=float(rec.get("priority_score", rec.get("priority", 2.0))),
+                    data_size_mb=float(rec.get("data_size_mb", 10.0)),
+                    action="BACKUP_NOW",
+                    reason="Scheduled for immediate cloud backup by ML decision pipeline"
+                )
+            )
+
+        for rec in deferred:
+            schedule_items.append(
+                ScheduleItem(
+                    record_id=rec["record_id"],
+                    record_type=rec.get("record_type", "UNKNOWN"),
+                    department=rec.get("department", "General"),
+                    criticality=rec.get("criticality", "MEDIUM"),
+                    priority_score=float(rec.get("priority_score", rec.get("priority", 1.0))),
+                    data_size_mb=float(rec.get("data_size_mb", 10.0)),
+                    action="DEFER",
+                    reason="Deferred to off-peak window by ML capacity scheduler"
                 )
             )
 
@@ -80,13 +66,16 @@ class SmartScheduler:
             capacity_threshold_mb=threshold_mb,
             is_capacity_exceeded=is_exceeded,
             total_pending_records=len(pending_records),
-            scheduled_now_count=now_count,
-            deferred_count=deferred_count,
+            scheduled_now_count=len(scheduled_now),
+            deferred_count=len(deferred),
             schedule=schedule_items
         )
 
         self._last_schedule = schedule_resp
-        logger.info(f"Generated backup schedule with {now_count} IMMEDIATE backups and {deferred_count} DEFERRED items.")
+        logger.info(
+            f"Generated ML backup schedule: {len(scheduled_now)} scheduled, {len(deferred)} deferred "
+            f"(Predicted workload: {predicted_mb} MB)"
+        )
         return schedule_resp
 
     def get_current_schedule(self) -> ScheduleResponse:
