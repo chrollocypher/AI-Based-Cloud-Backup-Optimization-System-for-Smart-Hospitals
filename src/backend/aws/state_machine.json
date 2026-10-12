@@ -1,0 +1,66 @@
+{
+  "Comment": "AI-Driven Smart Hospital EHR Storage Tiering & Backup Optimization Pipeline",
+  "StartAt": "GetJointForecast",
+  "States": {
+    "GetJointForecast": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789012:function:SmartHospitalForecastTask",
+      "ResultPath": "$.forecast",
+      "Next": "EvaluateWorkloadPolicy",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "EvaluateWorkloadPolicy": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.forecast.workload_intensity_level",
+          "StringEquals": "PEAK",
+          "Next": "HandlePeakWorkload"
+        }
+      ],
+      "Default": "EvaluateTierDecisions"
+    },
+    "HandlePeakWorkload": {
+      "Type": "Pass",
+      "Parameters": {
+        "throttle_backups": true,
+        "prefetch_emergency_records": true,
+        "message": "Capacity threshold near peak. Deferring non-urgent backups and locking hot cache."
+      },
+      "ResultPath": "$.peak_policy",
+      "Next": "EvaluateTierDecisions"
+    },
+    "EvaluateTierDecisions": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789012:function:SmartHospitalTierDecisionTask",
+      "ResultPath": "$.decisions",
+      "Next": "ExecuteS3Transitions",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2
+        }
+      ]
+    },
+    "ExecuteS3Transitions": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789012:function:SmartHospitalS3TransitionTask",
+      "ResultPath": "$.transitions_result",
+      "Next": "PublishCloudWatchMetrics"
+    },
+    "PublishCloudWatchMetrics": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789012:function:SmartHospitalMetricsPublisher",
+      "ResultPath": "$.metrics_result",
+      "End": true
+    }
+  }
+}
