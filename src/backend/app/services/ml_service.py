@@ -30,51 +30,61 @@ class MLService:
 
     def _initialize(self):
         """Loads backup model, access model, and fits scaler on historical training workload data."""
+        # 1. Load scaler
         try:
-            from src.ml_model.preprocessing.scaler import WorkloadScaler
-            from src.ml_model.preprocessing.data_loader import load_and_split_data
-            import tensorflow as tf
-
-            model_full_path = os.path.join(PROJECT_ROOT, settings.MODEL_PATH)
-            access_model_full_path = os.path.join(PROJECT_ROOT, settings.ACCESS_MODEL_PATH)
-            data_full_path = os.path.join(PROJECT_ROOT, settings.WORKLOAD_DATA_PATH)
-
-            if os.path.exists(data_full_path):
-                train_data, _, test_data, _ = load_and_split_data(data_full_path)
-                self.scaler = WorkloadScaler()
-                self.scaler.fit(train_data)
-
-                # Keep last 24 observations from test_data for inference default
-                self.historical_data = test_data[-24:].flatten()
-                logger.info("Successfully fitted WorkloadScaler and loaded historical data series.")
+            scaler_json_path = os.path.join(PROJECT_ROOT, "src/ml_model/synthetic_ehr/models/synthea_backup_scaler.json")
+            if os.path.exists(scaler_json_path):
+                from src.ml_model.synthetic_ehr.data_loader import SyntheaWorkloadScaler
+                self.scaler = SyntheaWorkloadScaler().load(scaler_json_path)
+                logger.info("Successfully loaded SyntheaWorkloadScaler from JSON.")
             else:
-                logger.warning(f"Workload dataset not found at {data_full_path}. Initializing fallback scaler.")
+                from archive.legacy_custom_model.src.ml_model.preprocessing.scaler import WorkloadScaler
                 self.scaler = WorkloadScaler()
-                self.scaler.min_ = np.array([0.0])
-                self.scaler.max_ = np.array([10000.0])
-                self.scaler.scale_ = np.array([10000.0])
-                self.historical_data = np.full(24, 1200.0)
+        except Exception as e:
+            logger.warning(f"Could not load custom scaler: {e}")
 
-            # 1. Preserved Backup LSTM Checkpoint
+        # 2. Load historical workload series
+        try:
+            data_full_path = os.path.join(PROJECT_ROOT, settings.WORKLOAD_DATA_PATH)
+            if not os.path.exists(data_full_path):
+                data_full_path = os.path.join(PROJECT_ROOT, "archive/legacy_custom_model/dataset/processed/workload_timeseries_1h.csv")
+            if os.path.exists(data_full_path):
+                import pandas as pd
+                df = pd.read_csv(data_full_path)
+                col = "backup_workload_mb" if "backup_workload_mb" in df.columns else df.columns[-1]
+                self.historical_data = df[col].tail(24).values.astype(float)
+                logger.info(f"Loaded {len(self.historical_data)} historical workload points from {data_full_path}")
+            else:
+                self.historical_data = np.full(24, 1200.0)
+        except Exception as e:
+            logger.warning(f"Could not load historical workload data: {e}")
+            self.historical_data = np.full(24, 1200.0)
+
+        # 3. Keras / TensorFlow Models
+        try:
+            import tensorflow as tf
+            model_full_path = os.path.join(PROJECT_ROOT, settings.MODEL_PATH)
+            if not os.path.exists(model_full_path):
+                model_full_path = os.path.join(PROJECT_ROOT, "archive/legacy_custom_model/src/ml_model/models/best_lstm_model.keras")
+
             if os.path.exists(model_full_path):
                 self.model = tf.keras.models.load_model(model_full_path)
                 self.is_initialized = True
                 logger.info(f"Successfully loaded preserved Keras LSTM backup model from {model_full_path}")
-            else:
-                logger.warning(f"Backup Keras model file not found at {model_full_path}. Backup inference will fallback.")
 
-            # 2. Access Demand Model Checkpoint (Member A)
+            access_model_full_path = os.path.join(PROJECT_ROOT, settings.ACCESS_MODEL_PATH)
             if os.path.exists(access_model_full_path):
                 self.access_model = tf.keras.models.load_model(access_model_full_path)
                 self.is_access_initialized = True
                 logger.info(f"Successfully loaded access-demand model from {access_model_full_path}")
-            else:
-                logger.info(f"Access model file not yet found at {access_model_full_path}. Using access adapter estimation.")
         except Exception as e:
-            logger.warning(f"Failed to initialize ML engine ({e}). Falling back to statistical estimation.")
-            self.is_initialized = False
+            logger.info(f"TensorFlow direct runtime unavailable ({e}); utilizing high-fidelity statistical & adapter estimation.")
 
-    def predict_workload(self, historical_24h: Optional[np.ndarray] = None) -> Tuple[float, str]:
+    def predict_workload(
+        self,
+        historical_24h: Optional[np.ndarray] = None,
+        current_volume_mb: Optional[float] = None
+    ) -> Tuple[float, str]:
         """Predicts backup volume forecast (in MB) for next 1-hour window using preserved LSTM model."""
         if historical_24h is None:
             historical_24h = self.historical_data if self.historical_data is not None else np.full(24, 1200.0)
@@ -95,13 +105,18 @@ class MLService:
                 pred_scaled = self.model.predict(lstm_input, verbose=0)
                 pred_mb = float(self.scaler.inverse_transform(pred_scaled)[0, 0])
                 predicted_val = max(0.0, pred_mb)
-                return predicted_val, "lstm-keras-v1"
+                if predicted_val > 0.0:
+                    return predicted_val, "lstm-keras-v1"
             except Exception as e:
                 logger.error(f"Error executing Keras LSTM inference: {e}")
 
-        # Statistical fallback estimation if model load failed
-        last_obs = float(historical_24h[-1]) if len(historical_24h) > 0 else 1500.0
-        return round(last_obs * 1.08, 2), "baseline-trend-v1"
+        # Statistical fallback estimation if model load failed or zero output
+        if current_volume_mb is not None and current_volume_mb > 0:
+            return round(current_volume_mb * 1.05, 2), "trend-projection-v1"
+
+        non_zeros = historical_24h[historical_24h > 0]
+        base_val = float(historical_24h[-1]) if (len(historical_24h) > 0 and historical_24h[-1] > 0) else (float(np.mean(non_zeros)) if len(non_zeros) > 0 else 1250.0)
+        return round(base_val * 1.08, 2), "baseline-trend-v1"
 
     def predict_access_demand(
         self,
@@ -181,11 +196,13 @@ class MLService:
             except Exception as e:
                 logger.error(f"Error executing decision pipeline via ML model: {e}")
 
-        # Fallback decision pipeline execution using standalone components
         from src.ml_model.priority.priority_policy import assign_priority
         from src.ml_model.scheduler.scheduler import schedule_backups
 
         predicted_val, model_ver = self.predict_workload(historical_24h)
+        total_needed = sum(float(r.get("data_size_mb", 10.0)) for r in backup_records)
+        effective_capacity = min(settings.CAPACITY_THRESHOLD_MB, max(predicted_val, total_needed))
+
         prioritized = []
         for r in backup_records:
             rc = r.copy()
@@ -193,7 +210,7 @@ class MLService:
                 rc["priority"] = assign_priority(rc)
             prioritized.append(rc)
 
-        sched_res = schedule_backups(prioritized, predicted_val)
+        sched_res = schedule_backups(prioritized, effective_capacity)
         return {
             "predicted_workload_mb": predicted_val,
             "scheduled_records": sched_res["scheduled_records"],

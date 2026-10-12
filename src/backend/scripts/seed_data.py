@@ -107,5 +107,69 @@ def seed_records():
     return created
 
 
+def seed_from_synthea(limit: int = 50):
+    """Seeds records and access events directly from Member A Synthea processed access logs."""
+    import pandas as pd
+    from app.core.config import settings
+
+    csv_path = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")), settings.SYNTHEA_ACCESS_LOGS_PATH)
+    if not os.path.exists(csv_path):
+        print(f"Synthea CSV not found at {csv_path}, falling back to synthetic seed.")
+        return seed_records()
+
+    print(f"Seeding {limit} records from Synthea dataset ({csv_path})...")
+    df = pd.read_csv(csv_path).head(limit)
+    created = []
+
+    for _, row in df.iterrows():
+        tier_val = str(row.get("storage_tier", "STANDARD")).upper()
+        if tier_val in ["HOT", "STANDARD"]:
+            st = StorageTier.STANDARD
+        elif tier_val in ["WARM", "STANDARD_IA"]:
+            st = StorageTier.STANDARD_IA
+        elif tier_val in ["COLD", "GLACIER"]:
+            st = StorageTier.GLACIER_FLEXIBLE
+        else:
+            st = StorageTier.GLACIER_DEEP_ARCHIVE
+
+        crit_str = str(row.get("criticality", "MEDIUM")).upper()
+        crit = Criticality(crit_str) if crit_str in Criticality.__members__ else Criticality.MEDIUM
+
+        rec_in = RecordCreate(
+            record_id=str(row.get("event_id", f"REC_{uuid.uuid4().hex[:6]}")),
+            patient_id=str(row.get("patient_id", f"PAT_{uuid.uuid4().hex[:6]}")),
+            record_type=str(row.get("record_type", "EHR")),
+            department=str(row.get("department", "General")),
+            data_size_mb=float(row.get("data_size_mb", 10.0)),
+            access_frequency=int(row.get("access_frequency", 1)),
+            criticality=crit,
+            storage_tier=st,
+            emergency_flag=bool(row.get("emergency_flag", False))
+        )
+        r = record_service.create_record(rec_in)
+        created.append(r)
+
+        event = RawAccessEvent(
+            event_id=f"EVT_{uuid.uuid4().hex[:6].upper()}",
+            timestamp=datetime.now(timezone.utc),
+            patient_id=r.patient_id,
+            record_type=r.record_type,
+            department=r.department,
+            access_type=AccessType.RETRIEVE if r.emergency_flag else AccessType.READ,
+            access_frequency=r.access_frequency,
+            data_size_mb=r.data_size_mb,
+            criticality=crit,
+            storage_tier=st,
+            emergency_flag=r.emergency_flag
+        )
+        record_service.record_access_event(event)
+
+    print(f"Successfully seeded {len(created)} records from Synthea access logs.")
+    return created
+
+
 if __name__ == "__main__":
-    seed_records()
+    if len(sys.argv) > 1 and sys.argv[1] == "--synthea":
+        seed_from_synthea()
+    else:
+        seed_records()

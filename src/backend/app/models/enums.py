@@ -60,6 +60,8 @@ class AccessType(str, Enum):
     UPDATE = "UPDATE"
     RETRIEVE = "RETRIEVE"
     BACKUP = "BACKUP"
+    QUERY_BATCH = "QUERY_BATCH"
+    EMERGENCY_OVERRIDE = "EMERGENCY_OVERRIDE"
 
 
 class BackupStatus(str, Enum):

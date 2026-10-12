@@ -40,9 +40,9 @@ class PredictionService:
                 model_ver = result.get("model_version", "sagemaker-lstm-v1")
             except Exception as e:
                 logger.warning(f"SageMaker invocation failed ({e}), using local model inference.")
-                predicted_val, model_ver = ml_service.predict_workload()
+                predicted_val, model_ver = ml_service.predict_workload(current_volume_mb=req.data_volume_mb)
         else:
-            predicted_val, model_ver = ml_service.predict_workload()
+            predicted_val, model_ver = ml_service.predict_workload(current_volume_mb=req.data_volume_mb)
 
         pred_response = PredictionResponse(
             forecast_horizon="1 hour",

@@ -28,9 +28,10 @@ class Settings(BaseSettings):
     CAPACITY_THRESHOLD_MB: float = 10000.0
 
     # ML Model & Dataset Settings
-    MODEL_PATH: str = "src/ml_model/models/best_lstm_model.keras"
-    ACCESS_MODEL_PATH: str = "src/ml_model/models/best_access_bilstm.keras"
-    WORKLOAD_DATA_PATH: str = "dataset/processed/workload_timeseries_1h.csv"
+    MODEL_PATH: str = "src/ml_model/synthetic_ehr/models/best_synthea_backup_lstm.keras"
+    ACCESS_MODEL_PATH: str = "src/ml_model/synthetic_ehr/models/best_synthea_access_lstm.keras"
+    WORKLOAD_DATA_PATH: str = "dataset/synthea/processed/synthea_hourly_workload.csv"
+    SYNTHEA_ACCESS_LOGS_PATH: str = "dataset/synthea/processed/synthea_ehr_access_logs.csv"
 
     model_config = SettingsConfigDict(
         env_file=".env",
