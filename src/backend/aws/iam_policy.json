@@ -1,0 +1,66 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LeastPrivilegeS3Access",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:CopyObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::smart-hospital-ehr",
+        "arn:aws:s3:::smart-hospital-ehr/*",
+        "arn:aws:s3:::smart-hospital-backups",
+        "arn:aws:s3:::smart-hospital-backups/*"
+      ]
+    },
+    {
+      "Sid": "LeastPrivilegeDynamoDBAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:BatchWriteItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/SmartHospitalRecords",
+        "arn:aws:dynamodb:*:*:table/SmartHospitalBackupJobs",
+        "arn:aws:dynamodb:*:*:table/SmartHospitalAccessEvents",
+        "arn:aws:dynamodb:*:*:table/SmartHospitalRetrievalJobs"
+      ]
+    },
+    {
+      "Sid": "LeastPrivilegeStepFunctionsExecution",
+      "Effect": "Allow",
+      "Action": [
+        "states:StartExecution",
+        "states:DescribeExecution",
+        "states:GetExecutionHistory",
+        "states:StopExecution"
+      ],
+      "Resource": [
+        "arn:aws:states:*:*:stateMachine:SmartHospital*"
+      ]
+    },
+    {
+      "Sid": "LeastPrivilegeCloudWatchMetricsAndAlarms",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricData",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:PutMetricAlarm"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
