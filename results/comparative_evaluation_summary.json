@@ -1,0 +1,62 @@
+{
+  "workload_summary": {
+    "total_records": 250,
+    "total_volume_gb": 37.29,
+    "total_access_events": 2457,
+    "total_emergency_events": 565
+  },
+  "policy_comparison": {
+    "Policy_A_Proposed": {
+      "name": "Proposed (AI Forecast + Clinical Shield + Cache)",
+      "avg_retrieval_latency_ms": 4560.26,
+      "avg_emergency_latency_ms": 654.29,
+      "critical_availability_pct": 99.65,
+      "monthly_storage_cost_usd": 0.8453,
+      "cache_hit_rate_pct": 92.51,
+      "backup_success_rate_pct": 100.0,
+      "emergency_sla_violations": 2,
+      "emergency_sla_violation_rate_pct": 0.35,
+      "cost_savings_vs_static_pct": 1.57
+    },
+    "Policy_B_Static": {
+      "name": "Static Baseline (100% S3 Standard)",
+      "avg_retrieval_latency_ms": 92.07,
+      "avg_emergency_latency_ms": 92.68,
+      "critical_availability_pct": 100.0,
+      "monthly_storage_cost_usd": 0.8588,
+      "cache_hit_rate_pct": 0.0,
+      "backup_success_rate_pct": 100.0,
+      "emergency_sla_violations": 0,
+      "emergency_sla_violation_rate_pct": 0.0,
+      "cost_savings_vs_static_pct": 0.0
+    },
+    "Policy_C_Conventional": {
+      "name": "Conventional Baseline (Naive 30-Day Glacier Aging)",
+      "avg_retrieval_latency_ms": 115417.84,
+      "avg_emergency_latency_ms": 114405.29,
+      "critical_availability_pct": 36.46,
+      "monthly_storage_cost_usd": 0.5026,
+      "cache_hit_rate_pct": 0.0,
+      "backup_success_rate_pct": 100.0,
+      "emergency_sla_violations": 359,
+      "emergency_sla_violation_rate_pct": 63.54,
+      "cost_savings_vs_static_pct": 41.47
+    }
+  },
+  "forecast_accuracy_baseline": {
+    "backup_volume_target": {
+      "model": "TensorFlow LSTM (Preserved)",
+      "mae_mb": 42.18,
+      "rmse_mb": 58.44,
+      "mape_pct": 3.42,
+      "status": "VALIDATED"
+    },
+    "access_demand_target": {
+      "model": "BiLSTM / Access Adapter",
+      "mae_events": 18.5,
+      "rmse_events": 27.2,
+      "mape_pct": 4.15,
+      "status": "VALIDATED"
+    }
+  }
+}
