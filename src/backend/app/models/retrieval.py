@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, Dict
 from app.models.enums import StorageTier
 
 
@@ -18,7 +18,7 @@ class RetrievalJobResponse(BaseModel):
     record_id: str = Field(..., description="Retrieved record identifier")
     patient_id: Optional[str] = Field(default=None, description="Patient identifier")
     is_emergency: bool = Field(..., description="Whether this was an emergency request")
-    storage_tier: StorageTier = Field(..., description="Storage class where record was located at retrieval time")
+    storage_tier: str = Field(..., description="Storage class where record was located at retrieval time")
     cache_hit: bool = Field(default=False, description="Whether record was served from low-latency cache")
     retrieval_latency_ms: float = Field(..., ge=0.0, description="Measured request-to-available latency in milliseconds")
     sla_target_ms: float = Field(default=500.0, description="SLA threshold in ms (e.g. 500ms for emergency)")
@@ -26,6 +26,20 @@ class RetrievalJobResponse(BaseModel):
     s3_location: Optional[str] = Field(default=None, description="Source S3 URI of the record object")
     requested_at: datetime = Field(..., description="Timestamp when retrieval was requested")
     completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Completion timestamp")
+
+
+class PrefetchRequest(BaseModel):
+    """Payload to proactively warm the cache with records with high predicted access demand."""
+    record_ids: List[str] = Field(..., description="List of record IDs to prefetch into low-latency cache")
+    reason: Optional[str] = Field(default="High predicted access demand", description="Reason for prefetching")
+
+
+class PrefetchResponse(BaseModel):
+    """Outcome of prefetching operations."""
+    prefetched_count: int
+    failed_count: int
+    cached_record_ids: List[str]
+    prefetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class RetrievalMetricsSummary(BaseModel):
@@ -36,5 +50,5 @@ class RetrievalMetricsSummary(BaseModel):
     cache_hit_rate_percent: float = Field(default=0.0)
     sla_violations_count: int = Field(default=0)
     sla_violation_rate_percent: float = Field(default=0.0)
-    average_latency_by_tier_ms: dict[str, float] = Field(default_factory=dict)
+    average_latency_by_tier_ms: Dict[str, float] = Field(default_factory=dict)
     average_emergency_latency_ms: float = Field(default=0.0)
