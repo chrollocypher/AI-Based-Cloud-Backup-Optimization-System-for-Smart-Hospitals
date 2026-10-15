@@ -48,3 +48,9 @@ def get_latest_access_prediction():
 def get_joint_forecast():
     """Retrieve combined forecast integrating both backup volume and access demand for tiering decisions."""
     return prediction_service.get_joint_workload_forecast()
+
+
+@router.get("/workload/forecast-latest", response_model=JointWorkloadForecastResponse, tags=["Predictions"])
+def get_latest_workload_forecast():
+    """Contract alias for the joint next-hour workload forecast used by the orchestrator."""
+    return prediction_service.get_joint_workload_forecast()

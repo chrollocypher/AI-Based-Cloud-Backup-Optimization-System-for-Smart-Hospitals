@@ -8,6 +8,14 @@ export default defineConfig(({ mode }) => {
   return {
     base: standalone ? './' : '/',
     plugins: [react(), ...(standalone ? [viteSingleFile()] : [])],
-    server: { port: 5173 },
+    server: {
+      port: 5173,
+      proxy: {
+        '/api': 'http://localhost:8000',
+        '/docs': 'http://localhost:8000',
+        '/redoc': 'http://localhost:8000',
+        '/openapi.json': 'http://localhost:8000',
+      },
+    },
   };
 });

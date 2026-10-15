@@ -74,6 +74,13 @@ export const api = {
   listRecords: (params) => request('/records', { params }),
   getRecord: (id) => request(`/records/${encodeURIComponent(id)}`),
   createRecord: (record) => request('/records', { method: 'POST', body: record }),
+  ingestAccessEvents: (events) => request('/records/access-events', { method: 'POST', body: events }),
+  patientAccessHistory: (patientId) =>
+    request(`/records/patient/${encodeURIComponent(patientId)}/access-history`),
+  recordAccessHistory: (recordId) =>
+    request(`/records/${encodeURIComponent(recordId)}/access-history`),
+  retrieveByRecord: (recordId, body) =>
+    request(`/records/${encodeURIComponent(recordId)}/retrieve`, { method: 'POST', body: body || {} }),
 
   // Predictions & Forecasting
   latestPrediction: () => request('/predictions/latest'),
@@ -81,6 +88,7 @@ export const api = {
   latestAccessPrediction: () => request('/predictions/access-demand/latest'),
   predictAccess: (input) => request('/predictions/access-demand', { method: 'POST', body: input }),
   jointForecast: () => request('/predictions/joint-forecast'),
+  latestWorkloadForecast: () => request('/workload/forecast-latest'),
 
   // Scheduler
   getSchedule: () => request('/schedule'),
@@ -122,6 +130,7 @@ export const api = {
       body: inputData || {},
     }),
   listPipelineExecutions: () => request('/orchestration/executions'),
+  getExecution: (id) => request(`/orchestration/executions/${encodeURIComponent(id)}`),
 };
 
 // Helper: runs backup and regenerates schedule

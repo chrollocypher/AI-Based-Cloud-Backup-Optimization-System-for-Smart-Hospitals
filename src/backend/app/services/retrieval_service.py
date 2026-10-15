@@ -133,6 +133,7 @@ class RetrievalService:
         # Record access log entry
         access_event = RawAccessEvent(
             event_id=f"EVT_{uuid.uuid4().hex[:6].upper()}",
+            record_id=record.record_id,
             timestamp=req_time,
             patient_id=record.patient_id or f"P_SYN_{record.record_id}",
             record_type=record.record_type,

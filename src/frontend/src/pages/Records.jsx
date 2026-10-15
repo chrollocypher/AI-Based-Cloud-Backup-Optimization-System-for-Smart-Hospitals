@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, CloudUpload, Plus, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, CloudUpload, Plus, Search, ShieldAlert } from 'lucide-react';
 import { api, runBackups } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import {
-  CRITICALITY_RANK, CriticalityTag, DefinitionList, Drawer, Empty, ErrorBox, Loading, PageHeader, Panel, StatusTag, useToast,
+  CRITICALITY_RANK, CriticalityTag, DefinitionList, Drawer, Empty, ErrorBox, Loading, PageHeader, Panel, StatusTag, TierTag, useToast,
 } from '../components/ui.jsx';
 import { fmtDateTime, fmtMB, fmtNum, localInputToIso, nowLocalInput, plural } from '../lib/format.js';
 import { DEPARTMENTS, RECORD_TYPES, SAMPLE_RECORDS } from '../lib/sample.js';
@@ -13,6 +13,7 @@ const COLUMNS = [
   { key: 'criticality', label: 'Criticality', get: (r) => CRITICALITY_RANK[r.criticality] || 0 },
   { key: 'data_size_mb', label: 'Size', get: (r) => r.data_size_mb, num: true },
   { key: 'access_frequency', label: 'Accessed (24h)', get: (r) => r.access_frequency, num: true },
+  { key: 'storage_tier', label: 'Tier', get: (r) => r.storage_tier || '' },
   { key: 'priority', label: 'Priority', get: (r) => r.priority ?? -1, num: true },
   { key: 'backup_status', label: 'Status', get: (r) => r.backup_status },
   { key: 'last_backup', label: 'Last backup', get: (r) => (r.last_backup ? new Date(r.last_backup).getTime() : 0) },
@@ -169,6 +170,7 @@ export default function Records() {
                     <td><CriticalityTag level={r.criticality} /></td>
                     <td className="num">{fmtMB(r.data_size_mb)}</td>
                     <td className="num">{fmtNum(r.access_frequency)}</td>
+                    <td><TierTag tier={r.storage_tier} /></td>
                     <td className="num">{r.priority != null ? fmtNum(r.priority, 2) : '—'}</td>
                     <td><StatusTag status={r.backup_status} /></td>
                     <td>{fmtDateTime(r.last_backup)}</td>
@@ -204,17 +206,39 @@ function RecordDrawer({ recordId, onClose, onChanged }) {
   const toast = useToast();
   const record = useApi(() => (recordId ? api.getRecord(recordId) : Promise.resolve(null)), [recordId]);
   const jobs = useApi(() => (recordId ? api.listBackups() : Promise.resolve([])), [recordId]);
+  const accessLogs = useApi(() => (recordId ? api.recordAccessHistory(recordId) : Promise.resolve([])), [recordId]);
   const [busy, setBusy] = useState(false);
   const r = record.data?.record_id === recordId ? record.data : null;
   const recordJobs = (jobs.data || []).filter((j) => j.record_id === recordId).sort((a, b) => new Date(b.scheduled_at) - new Date(a.scheduled_at));
+  const events = (accessLogs.data || []).slice().reverse();
 
   const backUp = async () => {
-    setBusy(true);
+    setBusy('backup');
     try {
       await runBackups(recordId);
       toast.success(`Backed up ${recordId}.`);
       record.reload(true);
       jobs.reload(true);
+      onChanged();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retrieve = async () => {
+    setBusy('retrieve');
+    try {
+      const res = await api.retrieveRecord({
+        record_id: recordId,
+        is_emergency: true,
+        department: r?.department || 'Emergency',
+        reason: 'Clinical lookup from records console',
+      });
+      toast.success(`Retrieved ${recordId} in ${res.retrieval_latency_ms} ms (${res.sla_met ? 'SLA met' : 'SLA missed'}).`);
+      record.reload(true);
+      accessLogs.reload(true);
       onChanged();
     } catch (e) {
       toast.error(e.message);
@@ -230,10 +254,16 @@ function RecordDrawer({ recordId, onClose, onChanged }) {
       onClose={onClose}
       footer={
         r && (
-          <button className="btn primary" onClick={backUp} disabled={busy}>
-            <CloudUpload size={16} aria-hidden="true" />
-            {busy ? 'Backing up' : r.backup_status === 'COMPLETED' ? 'Back up again' : 'Back up now'}
-          </button>
+          <>
+            <button className="btn" onClick={retrieve} disabled={!!busy}>
+              <ShieldAlert size={16} aria-hidden="true" />
+              {busy === 'retrieve' ? 'Retrieving' : 'Emergency retrieve'}
+            </button>
+            <button className="btn primary" onClick={backUp} disabled={!!busy}>
+              <CloudUpload size={16} aria-hidden="true" />
+              {busy === 'backup' ? 'Backing up' : r.backup_status === 'COMPLETED' ? 'Back up again' : 'Back up now'}
+            </button>
+          </>
         )
       }
     >
@@ -244,18 +274,39 @@ function RecordDrawer({ recordId, onClose, onChanged }) {
           <div className="drawer-tags">
             <CriticalityTag level={r.criticality} />
             <StatusTag status={r.backup_status} />
+            <TierTag tier={r.storage_tier} />
+            {r.emergency_flag && <span className="tag tag-critical">Emergency</span>}
           </div>
           <DefinitionList
             items={[
+              ['Patient ID', r.patient_id || '—'],
               ['Record type', r.record_type],
               ['Department', r.department],
               ['Size', fmtMB(r.data_size_mb)],
               ['Accessed in last 24h', fmtNum(r.access_frequency)],
+              ['Storage tier', r.storage_tier],
+              ['S3 location', r.s3_location || '—'],
               ['Generated', fmtDateTime(r.timestamp)],
               ['Registered', fmtDateTime(r.created_at)],
+              ['Last accessed', fmtDateTime(r.last_accessed_at)],
               ['Last backup', fmtDateTime(r.last_backup)],
             ]}
           />
+          <h3>Access history</h3>
+          {recordId && accessLogs.data && events.length === 0 && <p className="muted small">No access events logged for this record yet.</p>}
+          {events.length > 0 && (
+            <ul className="history">
+              {events.slice(0, 8).map((ev, idx) => (
+                <li key={ev.event_id || idx}>
+                  <div>
+                    <div className="cell-strong">{ev.access_type || 'ACCESS'}</div>
+                    <div className="cell-sub">{fmtDateTime(ev.timestamp)} · {ev.department}</div>
+                  </div>
+                  <span className="muted small">{ev.emergency_flag ? 'Emergency' : 'Standard'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <h3>Backup history</h3>
           {recordId && jobs.data && recordJobs.length === 0 && <p className="muted small">This record has not been backed up yet.</p>}
           {recordJobs.length > 0 && (

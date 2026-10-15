@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CloudUpload, RefreshCw, RotateCcw } from 'lucide-react';
 import { api, runBackups } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
@@ -19,9 +19,57 @@ export default function Backups() {
   const jobs = useApi(() => api.listBackups(filter), [filter], { interval: 15000 });
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailError, setDetailError] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const rows = [...(jobs.data || [])].sort((a, b) => new Date(b.scheduled_at) - new Date(a.scheduled_at));
   const job = rows.find((j) => j.job_id === selected) || null;
+
+  const loadDetail = (id) => {
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    api
+      .getBackup(id)
+      .then(setDetail)
+      .catch(setDetailError)
+      .finally(() => setDetailLoading(false));
+  };
+
+  useEffect(() => {
+    if (!selected) {
+      setDetail(null);
+      setDetailError(null);
+      return undefined;
+    }
+    loadDetail(selected);
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  const view = detail || job;
+  const body = detailError && !detail ? (
+    <ErrorBox error={detailError} onRetry={() => loadDetail(selected)} />
+  ) : detailLoading && !detail ? (
+    <Loading label="Loading job" />
+  ) : view ? (
+    <>
+      <div className="drawer-tags"><StatusTag status={view.status} /></div>
+      {view.error_message && <div className="form-error" role="alert">{view.error_message}</div>}
+      <DefinitionList
+        items={[
+          ['Record', view.record_id],
+          ['Scheduled', fmtDateTime(view.scheduled_at)],
+          ['Started', fmtDateTime(view.started_at)],
+          ['Completed', fmtDateTime(view.completed_at)],
+          ['Duration', duration(view.started_at, view.completed_at)],
+          ['S3 location', <span className="path wrap" key="s3">{view.s3_location || '—'}</span>],
+          ['Execution ARN', <span className="path wrap" key="arn">{view.execution_arn || '—'}</span>],
+        ]}
+      />
+    </>
+  ) : null;
 
   const retry = async (id) => {
     setBusy(id);
@@ -139,31 +187,15 @@ export default function Backups() {
         title={job?.job_id || ''}
         onClose={() => setSelected(null)}
         footer={
-          job && (job.status === 'FAILED' || job.status === 'IN_PROGRESS') ? (
-            <button className="btn primary" onClick={() => retry(job.job_id)} disabled={busy === job.job_id}>
+          view && (view.status === 'FAILED' || view.status === 'IN_PROGRESS') ? (
+            <button className="btn primary" onClick={() => retry(view.job_id)} disabled={busy === view.job_id}>
               <RotateCcw size={16} aria-hidden="true" />
               Retry job
             </button>
           ) : null
         }
       >
-        {job && (
-          <>
-            <div className="drawer-tags"><StatusTag status={job.status} /></div>
-            {job.error_message && <div className="form-error" role="alert">{job.error_message}</div>}
-            <DefinitionList
-              items={[
-                ['Record', job.record_id],
-                ['Scheduled', fmtDateTime(job.scheduled_at)],
-                ['Started', fmtDateTime(job.started_at)],
-                ['Completed', fmtDateTime(job.completed_at)],
-                ['Duration', duration(job.started_at, job.completed_at)],
-                ['S3 location', <span className="path wrap" key="s3">{job.s3_location || '—'}</span>],
-                ['Execution ARN', <span className="path wrap" key="arn">{job.execution_arn || '—'}</span>],
-              ]}
-            />
-          </>
-        )}
+        {body}
       </Drawer>
     </>
   );

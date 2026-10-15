@@ -3,23 +3,32 @@ import {
   ShieldAlert, 
   Zap, 
   Coins, 
-  Clock, 
   Server, 
-  Flame, 
-  Snowflake, 
-  Thermometer, 
   RefreshCw, 
   CheckCircle2, 
-  AlertTriangle,
-  Play
+  Play,
+  ArrowRightLeft,
+  Gauge
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
+import { Empty, ErrorBox, Loading, useToast } from '../components/ui.jsx';
+import { fmtDateTime, fmtNum } from '../lib/format.js';
+
+const TIERS = ['HOT', 'WARM', 'COLD', 'ARCHIVE'];
+const QUICK_IDS = ['EHR_10025', 'MON_30089', 'CT_20041', 'ADMIN_9812'];
+const JOB_FILTERS = [
+  { value: 'all', label: 'All requests' },
+  { value: 'emergency', label: 'Emergency' },
+  { value: 'standard', label: 'Standard' },
+];
 
 export default function StorageRetrieval() {
+  const toast = useToast();
   const telemetry = useApi(api.systemTelemetry, [], { interval: 10000 });
   const costs = useApi(api.storageCostEstimate, [], { interval: 15000 });
   const alarms = useApi(api.cloudwatchAlarms, [], { interval: 15000 });
+  const metrics = useApi(api.retrievalMetrics, [], { interval: 10000 });
   const records = useApi(api.listRecords, []);
 
   const [testRecordId, setTestRecordId] = useState('EHR_10025');
@@ -30,6 +39,27 @@ export default function StorageRetrieval() {
   const [isTriggeringPipeline, setIsTriggeringPipeline] = useState(false);
 
   const [prefetchResult, setPrefetchResult] = useState(null);
+
+  const [jobFilter, setJobFilter] = useState('all');
+  const jobs = useApi(
+    () => api.listRetrievalJobs(jobFilter === 'all' ? undefined : jobFilter === 'emergency'),
+    [jobFilter],
+    { interval: 15000 },
+  );
+
+  const [tierRecordId, setTierRecordId] = useState('');
+  const [tierTarget, setTierTarget] = useState('COLD');
+  const [tierReason, setTierReason] = useState('ML access-demand optimization');
+  const [tierResult, setTierResult] = useState(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const reloadAll = () => {
+    telemetry.reload();
+    costs.reload();
+    alarms.reload();
+    metrics.reload();
+    records.reload();
+  };
 
   // Trigger Emergency Retrieval
   async function handleRetrieve(isEmergency = true) {
@@ -43,9 +73,11 @@ export default function StorageRetrieval() {
         reason: 'Acute emergency clinical evaluation'
       });
       setRetrievalResult(res);
-      telemetry.reload();
+      telemetry.reload(true);
+      metrics.reload(true);
+      jobs.reload(true);
     } catch (err) {
-      alert(`Retrieval failed: ${err.message}`);
+      toast.error(`Retrieval failed: ${err.message}`);
     } finally {
       setIsRetrieving(false);
     }
@@ -54,12 +86,13 @@ export default function StorageRetrieval() {
   // Prefetch Cache
   async function handlePrefetch() {
     try {
-      const ids = ['EHR_10025', 'MON_30089', 'CT_20041'];
-      const res = await api.prefetchRecords(ids, 'Predicted ER trauma admissions');
+      const res = await api.prefetchRecords(QUICK_IDS, 'Predicted ER trauma admissions');
       setPrefetchResult(res);
-      telemetry.reload();
+      telemetry.reload(true);
+      metrics.reload(true);
+      toast.success(`Prefetched ${res.prefetched_count} high-priority records into edge cache.`);
     } catch (err) {
-      alert(`Prefetch failed: ${err.message}`);
+      toast.error(`Prefetch failed: ${err.message}`);
     }
   }
 
@@ -69,45 +102,76 @@ export default function StorageRetrieval() {
     try {
       const res = await api.triggerPipeline();
       setPipelineState(res);
-      costs.reload();
-      telemetry.reload();
-      records.reload();
+      costs.reload(true);
+      telemetry.reload(true);
+      records.reload(true);
+      toast.success(`Pipeline ${res.execution_id} ${res.status === 'SUCCEEDED' ? 'completed' : 'started'}.`);
     } catch (err) {
-      alert(`Pipeline execution failed: ${err.message}`);
+      toast.error(`Pipeline execution failed: ${err.message}`);
     } finally {
       setIsTriggeringPipeline(false);
     }
   }
 
+  // Storage tier transition
+  async function handleTransition(e) {
+    e.preventDefault();
+    if (!tierRecordId) return;
+    setIsTransitioning(true);
+    try {
+      const res = await api.transitionTier(tierRecordId, tierTarget, tierReason);
+      setTierResult(res);
+      costs.reload(true);
+      telemetry.reload(true);
+      records.reload(true);
+      toast.success(`${res.record_id}: ${res.previous_tier} → ${res.new_tier}.`);
+    } catch (err) {
+      toast.error(`Tier transition failed: ${err.message}`);
+    } finally {
+      setIsTransitioning(false);
+    }
+  }
+
   const m = telemetry.data?.metrics;
+  const metric = metrics.data;
   const costData = costs.data;
   const alarmList = alarms.data || [];
+  const jobList = jobs.data || [];
+  const recordOptions = records.data || [];
+
+  if (telemetry.error && !telemetry.data && costs.error && !costs.data) {
+    return <ErrorBox error={telemetry.error || costs.error} onRetry={reloadAll} />;
+  }
 
   return (
     <div className="page">
       {/* Header */}
-      <div className="page-header flex justify-between items-center">
+      <div className="page-header">
         <div>
           <h1 className="page-title">Predictive Storage & Emergency Retrieval</h1>
           <p className="page-sub">
             Clinical criticality-aware cloud tiering, 500 ms SLA emergency watchdog, and cost optimization.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button 
-            className="btn btn-secondary" 
+        <div className="page-actions">
+          <button className="btn btn-secondary" onClick={reloadAll} title="Refresh all telemetry">
+            <RefreshCw size={16} aria-hidden="true" />
+            <span>Refresh</span>
+          </button>
+          <button
+            className="btn btn-secondary"
             onClick={handlePrefetch}
             title="Proactively prefetch emergency records into edge cache"
           >
-            <Zap size={16} />
+            <Zap size={16} aria-hidden="true" />
             <span>Prefetch Hot Cache</span>
           </button>
-          <button 
-            className="btn btn-primary" 
+          <button
+            className="btn btn-primary"
             onClick={handleTriggerPipeline}
             disabled={isTriggeringPipeline}
           >
-            <Play size={16} />
+            <Play size={16} aria-hidden="true" />
             <span>{isTriggeringPipeline ? 'Executing Pipeline...' : 'Run Step Functions'}</span>
           </button>
         </div>
@@ -115,8 +179,8 @@ export default function StorageRetrieval() {
 
       {/* Prefetch Notification */}
       {prefetchResult && (
-        <div className="banner banner-info" style={{ marginBottom: '1.25rem' }}>
-          <CheckCircle2 size={16} />
+        <div className="banner banner-info" role="status">
+          <CheckCircle2 size={16} aria-hidden="true" />
           <span>
             Prefetched {prefetchResult.prefetched_count} high-priority records into edge cache.
           </span>
@@ -124,7 +188,7 @@ export default function StorageRetrieval() {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-4" style={{ marginBottom: '1.5rem' }}>
+      <div className="grid grid-4">
         <div className="card stat-card">
           <div className="stat-label">Emergency Latency</div>
           <div className="stat-val">
@@ -160,32 +224,32 @@ export default function StorageRetrieval() {
         </div>
       </div>
 
-      <div className="grid grid-2" style={{ gap: '1.5rem', marginBottom: '1.5rem' }}>
+      <div className="grid grid-2">
         {/* Emergency Retrieval Console */}
         <div className="card">
-          <div className="card-header flex items-center justify-between">
-            <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <ShieldAlert size={18} className="text-danger" />
+          <div className="card-header">
+            <h2 className="card-title">
+              <ShieldAlert size={18} className="text-danger" aria-hidden="true" />
               <span>Emergency Retrieval Simulator</span>
             </h2>
             <span className="badge badge-danger">500 ms SLA Watchdog</span>
           </div>
 
-          <div style={{ padding: '1rem 0' }}>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+          <div>
+            <p className="small muted">
               Test high-priority record retrieval. Emergency requests bypass standard queues and check edge cache first before pulling from S3.
             </p>
 
-            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <input 
-                type="text" 
-                className="input" 
+            <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '0.75rem', margin: '1rem 0' }}>
+              <input
+                type="text"
+                className="input"
                 placeholder="Enter Record ID (e.g. EHR_10025)"
                 value={testRecordId}
                 onChange={(e) => setTestRecordId(e.target.value)}
-                style={{ flex: 1 }}
+                aria-label="Record ID to retrieve"
               />
-              <button 
+              <button
                 className="btn btn-primary"
                 onClick={() => handleRetrieve(true)}
                 disabled={isRetrieving || !testRecordId}
@@ -195,10 +259,10 @@ export default function StorageRetrieval() {
             </div>
 
             {/* Quick Select Buttons */}
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Quick Select:</span>
-              {['EHR_10025', 'MON_30089', 'CT_20041', 'ADMIN_9812'].map((id) => (
-                <button 
+            <div className="flex items-center gap-2" style={{ flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+              <span className="small muted">Quick select:</span>
+              {QUICK_IDS.map((id) => (
+                <button
                   key={id}
                   className="btn btn-ghost btn-xs"
                   onClick={() => setTestRecordId(id)}
@@ -210,15 +274,10 @@ export default function StorageRetrieval() {
 
             {/* Retrieval Outcome Display */}
             {retrievalResult && (
-              <div style={{ 
-                border: '1px solid var(--border-color)', 
-                borderRadius: '8px', 
-                padding: '1rem',
-                backgroundColor: 'var(--surface-subtle)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <div className="soft-box" style={{ marginTop: '1rem' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '0.75rem' }}>
                   <span style={{ fontWeight: 600 }}>{retrievalResult.record_id}</span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <div className="flex gap-2">
                     <span className={`badge ${retrievalResult.cache_hit ? 'badge-success' : 'badge-neutral'}`}>
                       {retrievalResult.cache_hit ? 'CACHE HIT' : 'CACHE MISS'}
                     </span>
@@ -230,23 +289,23 @@ export default function StorageRetrieval() {
 
                 <div className="grid grid-3" style={{ fontSize: '0.8125rem', gap: '0.5rem' }}>
                   <div>
-                    <div style={{ color: 'var(--text-muted)' }}>Storage Tier</div>
+                    <div className="muted">Storage tier</div>
                     <div style={{ fontWeight: 600 }}>{retrievalResult.storage_tier}</div>
                   </div>
                   <div>
-                    <div style={{ color: 'var(--text-muted)' }}>Latency</div>
-                    <div style={{ fontWeight: 600, color: retrievalResult.sla_met ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                    <div className="muted">Latency</div>
+                    <div className={retrievalResult.sla_met ? 'text-success' : 'text-danger'} style={{ fontWeight: 600 }}>
                       {retrievalResult.retrieval_latency_ms} ms
                     </div>
                   </div>
                   <div>
-                    <div style={{ color: 'var(--text-muted)' }}>SLA Target</div>
+                    <div className="muted">SLA target</div>
                     <div style={{ fontWeight: 600 }}>&le; {retrievalResult.sla_target_ms} ms</div>
                   </div>
                 </div>
 
-                <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  S3 Location: <code>{retrievalResult.s3_location}</code>
+                <div className="small muted" style={{ marginTop: '0.75rem' }}>
+                  S3 location: <code className="mono">{retrievalResult.s3_location}</code>
                 </div>
               </div>
             )}
@@ -255,97 +314,309 @@ export default function StorageRetrieval() {
 
         {/* Storage Multi-Tier & Cost Comparison */}
         <div className="card">
-          <div className="card-header flex items-center justify-between">
-            <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Coins size={18} className="text-primary" />
+          <div className="card-header">
+            <h2 className="card-title">
+              <Coins size={18} className="text-primary" aria-hidden="true" />
               <span>S3 Cloud Storage Cost Optimization</span>
             </h2>
-            <span className="badge badge-success">AWS us-east-1 Model</span>
+            <span className="badge badge-success">AWS {costData?.pricing_region || 'us-east-1'} model</span>
           </div>
 
-          <div style={{ padding: '1rem 0' }}>
-            <div className="grid grid-2" style={{ gap: '1rem', marginBottom: '1.25rem' }}>
-              <div style={{ padding: '0.75rem', backgroundColor: 'var(--surface-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Static S3 Standard Policy</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                  ${costData?.static_standard_monthly_cost_usd?.toFixed(2) ?? '0.00'}/mo
+          {costs.error && !costData ? (
+            <ErrorBox error={costs.error} onRetry={costs.reload} />
+          ) : !costData ? (
+            <Loading label="Loading cost model" />
+          ) : (
+            <div>
+              <div className="grid grid-2" style={{ marginBottom: '1.25rem' }}>
+                <div className="soft-box">
+                  <div className="small muted">Static S3 Standard policy</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                    ${fmtNum(costData.static_standard_monthly_cost_usd, 2)}/mo
+                  </div>
+                  <div className="small">All objects in Standard tier</div>
                 </div>
-                <div style={{ fontSize: '0.75rem' }}>All objects in Standard tier</div>
+
+                <div className="soft-box soft-box-accent">
+                  <div className="small muted">Proposed AI multi-tier policy</div>
+                  <div className="text-success" style={{ fontSize: '1.25rem', fontWeight: 700 }}>
+                    ${fmtNum(costData.proposed_policy_monthly_cost_usd, 2)}/mo
+                  </div>
+                  <div className="small text-success">
+                    Save ${fmtNum(costData.projected_monthly_savings_usd, 2)}/mo ({costData.savings_percentage}%)
+                  </div>
+                </div>
               </div>
 
-              <div style={{ padding: '0.75rem', backgroundColor: 'var(--surface-subtle)', borderRadius: '6px', border: '1px solid var(--color-success)' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Proposed AI Multi-Tier Policy</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-success)' }}>
-                  ${costData?.proposed_policy_monthly_cost_usd?.toFixed(2) ?? '0.00'}/mo
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-success)' }}>
-                  Save ${costData?.projected_monthly_savings_usd?.toFixed(2) ?? '0.00'}/mo ({costData?.savings_percentage ?? 0}%)
-                </div>
-              </div>
-            </div>
-
-            {/* Tier Breakdown Table */}
-            <div className="table-wrap">
-              <table className="table" style={{ fontSize: '0.8125rem' }}>
-                <thead>
-                  <tr>
-                    <th>Storage Tier</th>
-                    <th>Records</th>
-                    <th>Volume (GB)</th>
-                    <th>Est. Monthly Fee</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {costData?.breakdown_by_tier?.map((item) => (
-                    <tr key={item.tier}>
-                      <td>
-                        <span style={{ fontWeight: 600 }}>{item.tier}</span>
-                      </td>
-                      <td>{item.record_count}</td>
-                      <td>{item.total_volume_gb.toFixed(2)} GB</td>
-                      <td>${item.total_monthly_cost_usd.toFixed(4)}</td>
+              {/* Tier Breakdown Table */}
+              <div className="table-wrap">
+                <table className="table" style={{ fontSize: '0.8125rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Storage tier</th>
+                      <th className="num">Records</th>
+                      <th className="num">Volume</th>
+                      <th className="num">Est. monthly fee</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {costData.breakdown_by_tier?.map((item) => (
+                      <tr key={item.tier}>
+                        <td><span className="cell-strong">{item.tier}</span></td>
+                        <td className="num">{fmtNum(item.record_count)}</td>
+                        <td className="num">{fmtNum(item.total_volume_gb, 2)} GB</td>
+                        <td className="num">${fmtNum(item.total_monthly_cost_usd, 4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-            <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Clinical Safety Shield: <strong>{costData?.clinical_safety_protected_count ?? 0} records</strong> locked in high-availability tiers to safeguard emergency SLAs.
+              <div className="small muted" style={{ marginTop: '1rem' }}>
+                Clinical safety shield: <strong>{costData.clinical_safety_protected_count} records</strong> locked in high-availability tiers to safeguard emergency SLAs.
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* CloudWatch Alarms & Orchestration Trace */}
-      <div className="grid grid-2" style={{ gap: '1.5rem' }}>
+      {/* Retrieval metrics + Tier transition */}
+      <div className="grid grid-2">
         <div className="card">
           <div className="card-header">
-            <h2 className="card-title flex items-center gap-2">
-              <Server size={18} />
+            <h2 className="card-title">
+              <Gauge size={18} aria-hidden="true" />
+              <span>Retrieval Performance Metrics</span>
+            </h2>
+            <span className="badge badge-neutral">GET /retrieval/metrics</span>
+          </div>
+
+          {metrics.error && !metric ? (
+            <ErrorBox error={metrics.error} onRetry={metrics.reload} />
+          ) : !metric ? (
+            <Loading label="Loading retrieval metrics" />
+          ) : (
+            <div>
+              <div className="grid grid-2" style={{ marginBottom: '1rem' }}>
+                <div className="soft-box">
+                  <div className="small muted">Total retrieval requests</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{fmtNum(metric.total_retrieval_requests)}</div>
+                  <div className="small">{fmtNum(metric.emergency_requests_count)} emergency</div>
+                </div>
+                <div className="soft-box">
+                  <div className="small muted">Cache hit rate</div>
+                  <div className="text-success" style={{ fontSize: '1.25rem', fontWeight: 700 }}>
+                    {fmtNum(metric.cache_hit_rate_percent, 1)}%
+                  </div>
+                  <div className="small">{fmtNum(metric.cache_hits_count)} cache hits</div>
+                </div>
+                <div className="soft-box">
+                  <div className="small muted">Emergency latency (avg)</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{fmtNum(metric.average_emergency_latency_ms, 1)} ms</div>
+                  <div className="small">SLA target 500 ms</div>
+                </div>
+                <div className={`soft-box${metric.sla_violations_count > 0 ? '' : ' soft-box-accent'}`}>
+                  <div className="small muted">SLA violations</div>
+                  <div className={metric.sla_violations_count > 0 ? 'text-danger' : 'text-success'} style={{ fontSize: '1.25rem', fontWeight: 700 }}>
+                    {fmtNum(metric.sla_violations_count)}
+                  </div>
+                  <div className="small">{fmtNum(metric.sla_violation_rate_percent, 1)}% of requests</div>
+                </div>
+              </div>
+
+              {Object.keys(metric.average_latency_by_tier_ms || {}).length > 0 && (
+                <>
+                  <h3 className="small muted">Average latency by storage tier</h3>
+                  <dl className="deflist">
+                    {Object.entries(metric.average_latency_by_tier_ms).map(([tier, ms]) => (
+                      <div key={tier}>
+                        <dt>{tier}</dt>
+                        <dd>{fmtNum(ms, 1)} ms</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Tier transition console */}
+        <div className="card">
+          <div className="card-header">
+            <h2 className="card-title">
+              <ArrowRightLeft size={18} aria-hidden="true" />
+              <span>Storage Tier Transition</span>
+            </h2>
+            <span className="badge badge-neutral">POST /storage/tier-transitions</span>
+          </div>
+
+          <form className="form" onSubmit={handleTransition}>
+            <label>
+              Record ID
+              <input
+                className="input"
+                list="tier-record-options"
+                placeholder="EHR_10025"
+                value={tierRecordId}
+                onChange={(e) => setTierRecordId(e.target.value)}
+                required
+              />
+              <datalist id="tier-record-options">
+                {recordOptions.map((r) => (
+                  <option key={r.record_id} value={r.record_id} />
+                ))}
+              </datalist>
+            </label>
+            <label>
+              Target tier
+              <select value={tierTarget} onChange={(e) => setTierTarget(e.target.value)}>
+                {TIERS.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Reason
+              <input
+                className="input"
+                value={tierReason}
+                onChange={(e) => setTierReason(e.target.value)}
+              />
+            </label>
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary" disabled={isTransitioning || !tierRecordId}>
+                {isTransitioning ? 'Transitioning...' : 'Move record'}
+              </button>
+            </div>
+          </form>
+
+          {tierResult && (
+            <div className="soft-box">
+              <div className="flex items-center justify-between" style={{ marginBottom: '0.5rem' }}>
+                <span className="cell-strong">{tierResult.record_id}</span>
+                <span className={`badge ${tierResult.status === 'SUCCESS' ? 'badge-success' : 'badge-danger'}`}>{tierResult.status}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="badge badge-neutral">{tierResult.previous_tier}</span>
+                <ArrowRightLeft size={14} aria-hidden="true" />
+                <span className="badge badge-success">{tierResult.new_tier}</span>
+              </div>
+              <div className="small muted" style={{ marginTop: '0.5rem' }}>
+                AWS class {tierResult.aws_storage_class} · {fmtDateTime(tierResult.transitioned_at)}
+              </div>
+              {tierResult.safety_rule_applied && (
+                <div className="small text-danger" style={{ marginTop: '0.25rem' }}>
+                  Clinical safety rule was applied to protect this critical record.
+                </div>
+              )}
+              <div className="small muted" style={{ marginTop: '0.375rem' }}>
+                <code className="mono">{tierResult.s3_location}</code>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Emergency retrieval job history */}
+      <div className="card">
+        <div className="card-header">
+          <h2 className="card-title">
+            <ShieldAlert size={18} aria-hidden="true" />
+            <span>Retrieval History</span>
+          </h2>
+          <div className="chips" role="group" aria-label="Filter retrieval jobs">
+            {JOB_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                className={jobFilter === f.value ? 'chip on' : 'chip'}
+                onClick={() => setJobFilter(f.value)}
+                aria-pressed={jobFilter === f.value}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {jobs.error && !jobs.data ? (
+          <ErrorBox error={jobs.error} onRetry={jobs.reload} />
+        ) : !jobs.data ? (
+          <Loading label="Loading retrieval jobs" />
+        ) : jobList.length === 0 ? (
+          <Empty title="No retrieval jobs yet">
+            Run an emergency retrieval or prefetch to populate this history.
+          </Empty>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Record</th>
+                  <th>Type</th>
+                  <th>Storage tier</th>
+                  <th>Cache</th>
+                  <th className="num">Latency</th>
+                  <th>SLA</th>
+                  <th>Requested</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobList.map((j) => (
+                  <tr key={j.retrieval_id}>
+                    <td>
+                      <div className="cell-strong">{j.record_id}</div>
+                      <div className="cell-sub">{j.retrieval_id}</div>
+                    </td>
+                    <td>
+                      <span className={`badge ${j.is_emergency ? 'badge-danger' : 'badge-neutral'}`}>
+                        {j.is_emergency ? 'Emergency' : 'Standard'}
+                      </span>
+                    </td>
+                    <td>{j.storage_tier}</td>
+                    <td>
+                      <span className={`badge ${j.cache_hit ? 'badge-success' : 'badge-neutral'}`}>
+                        {j.cache_hit ? 'Hit' : 'Miss'}
+                      </span>
+                    </td>
+                    <td className="num">{fmtNum(j.retrieval_latency_ms, 1)} ms</td>
+                    <td>
+                      <span className={`badge ${j.sla_met ? 'badge-success' : 'badge-danger'}`}>
+                        {j.sla_met ? 'Met' : 'Violated'}
+                      </span>
+                    </td>
+                    <td>{fmtDateTime(j.requested_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* CloudWatch Alarms & Orchestration Trace */}
+      <div className="grid grid-2">
+        <div className="card">
+          <div className="card-header">
+            <h2 className="card-title">
+              <Server size={18} aria-hidden="true" />
               <span>CloudWatch Metric Alarms</span>
             </h2>
           </div>
-          <div style={{ padding: '0.75rem 0' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {alarms.error && !alarms.data ? (
+            <ErrorBox error={alarms.error} onRetry={alarms.reload} />
+          ) : !alarms.data ? (
+            <Loading label="Loading alarms" />
+          ) : alarmList.length === 0 ? (
+            <Empty title="No alarms configured" />
+          ) : (
+            <div className="stack">
               {alarmList.map((a) => (
-                <div 
-                  key={a.alarm_name} 
-                  style={{ 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center',
-                    padding: '0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: a.state === 'ALARM' ? 'rgba(239, 68, 68, 0.08)' : 'var(--surface-subtle)'
-                  }}
-                >
+                <div key={a.alarm_name} className="soft-box flex items-center justify-between">
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{a.alarm_name}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Metric: {a.metric_name} | Value: {a.current_value}
-                    </div>
+                    <div className="cell-strong">{a.alarm_name}</div>
+                    <div className="small muted">Metric: {a.metric_name} | Value: {a.current_value}</div>
                   </div>
                   <span className={`badge ${a.state === 'OK' ? 'badge-success' : 'badge-danger'}`}>
                     {a.state}
@@ -353,43 +624,51 @@ export default function StorageRetrieval() {
                 </div>
               ))}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Step Functions State Machine Execution Log */}
         <div className="card">
-          <div className="card-header flex justify-between items-center">
-            <h2 className="card-title flex items-center gap-2">
-              <RefreshCw size={18} />
+          <div className="card-header">
+            <h2 className="card-title">
+              <RefreshCw size={18} aria-hidden="true" />
               <span>Step Functions Pipeline Status</span>
             </h2>
           </div>
-          <div style={{ padding: '0.75rem 0' }}>
-            {pipelineState ? (
-              <div style={{ fontSize: '0.875rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Execution ID:</span>
-                  <code>{pipelineState.execution_id}</code>
+          {pipelineState ? (
+            <div>
+              <dl className="deflist">
+                <div>
+                  <dt>Execution ID</dt>
+                  <dd><code className="mono">{pipelineState.execution_id}</code></dd>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Status:</span>
-                  <span className="badge badge-success">{pipelineState.status}</span>
+                <div>
+                  <dt>Status</dt>
+                  <dd><span className={`badge ${pipelineState.status === 'SUCCEEDED' ? 'badge-success' : 'badge-neutral'}`}>{pipelineState.status}</span></dd>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Transitions Executed:</span>
-                  <span style={{ fontWeight: 600 }}>{pipelineState.transitions_executed}</span>
+                <div>
+                  <dt>Transitions executed</dt>
+                  <dd>{pipelineState.transitions_executed ?? '—'}</dd>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Mode:</span>
-                  <span>{pipelineState.mode}</span>
+                <div>
+                  <dt>Forecast intensity</dt>
+                  <dd>{pipelineState.forecast_intensity ?? '—'}</dd>
                 </div>
-              </div>
-            ) : (
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center', padding: '1.5rem 0' }}>
-                No active execution. Click <strong>"Run Step Functions"</strong> to orchestrate tiering.
-              </div>
-            )}
-          </div>
+                <div>
+                  <dt>Mode</dt>
+                  <dd>{pipelineState.mode}</dd>
+                </div>
+                <div>
+                  <dt>Started</dt>
+                  <dd>{fmtDateTime(pipelineState.started_at)}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : (
+            <Empty title="No active execution">
+              Click <strong>Run Step Functions</strong> to orchestrate tiering. Previous runs are listed on the System page.
+            </Empty>
+          )}
         </div>
       </div>
     </div>

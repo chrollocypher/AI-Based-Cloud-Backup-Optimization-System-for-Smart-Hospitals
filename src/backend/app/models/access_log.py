@@ -7,6 +7,7 @@ from app.models.enums import AccessType, Criticality, StorageTier, BackupStatus
 class RawAccessEvent(BaseModel):
     """Raw EHR access-event log schema matching Synthea-derived and simulated access logs."""
     event_id: str = Field(..., description="Unique event identifier (e.g. EVT_0001)")
+    record_id: Optional[str] = Field(default=None, description="Linked EHR record identifier when known")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Event timestamp (UTC)")
     patient_id: str = Field(..., description="Synthetic patient identifier (e.g. P_SYN_10482)")
     record_type: str = Field(..., description="Clinical record category (e.g. EHR, CT, MRI, Lab)")

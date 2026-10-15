@@ -111,19 +111,33 @@ class RecordService:
         if hasattr(event_in.criticality, "value"):
             event_dict["criticality"] = event_in.criticality.value
 
-        db_memory.put_access_event(event_dict)
+        rec = None
+        if event_in.record_id:
+            rec = db_memory.get_record(event_in.record_id)
+        if rec is None:
+            rec = db_memory.get_record(event_in.event_id)
+        if rec is None:
+            for candidate in db_memory.list_records():
+                if candidate.get("patient_id") == event_in.patient_id:
+                    rec = candidate
+                    break
 
-        # Update record access timestamp in database if record exists
-        rec = db_memory.get_record(event_in.event_id) or db_memory.get_record(event_in.patient_id)
         if rec:
+            event_dict["record_id"] = rec["record_id"]
             rec["last_accessed_at"] = event_dict["timestamp"]
             rec["access_frequency"] = rec.get("access_frequency", 0) + 1
             db_memory.put_record(rec)
 
+        db_memory.put_access_event(event_dict)
         return event_dict
 
-    def list_access_events(self, patient_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
-        return db_memory.list_access_events(patient_id=patient_id, limit=limit)
+    def list_access_events(
+        self,
+        patient_id: Optional[str] = None,
+        record_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        return db_memory.list_access_events(patient_id=patient_id, record_id=record_id, limit=limit)
 
 
 record_service = RecordService()

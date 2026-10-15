@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from app.models.schedule import ScheduleResponse, ScheduleItem
 from app.services.record_service import record_service
-from app.services.prediction_service import prediction_service
-from app.scheduler.priority_engine import prioritize_records
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -46,7 +44,12 @@ class SmartScheduler:
                 )
             )
 
+        deferred_count = 0
         for rec in deferred:
+            crit = str(rec.get("criticality", "MEDIUM")).upper()
+            next_round = crit in ("CRITICAL", "HIGH")
+            if not next_round:
+                deferred_count += 1
             schedule_items.append(
                 ScheduleItem(
                     record_id=rec["record_id"],
@@ -55,10 +58,16 @@ class SmartScheduler:
                     criticality=rec.get("criticality", "MEDIUM"),
                     priority_score=float(rec.get("priority_score", rec.get("priority", 1.0))),
                     data_size_mb=float(rec.get("data_size_mb", 10.0)),
-                    action="DEFER",
-                    reason="Deferred to off-peak window by ML capacity scheduler"
+                    action="BACKUP_NEXT" if next_round else "DEFER",
+                    reason=(
+                        "Queued for the next capacity window (high clinical priority)"
+                        if next_round
+                        else "Deferred to off-peak window by ML capacity scheduler"
+                    ),
                 )
             )
+
+        schedule_items.sort(key=lambda item: item.priority_score, reverse=True)
 
         schedule_resp = ScheduleResponse(
             generated_at=datetime.now(timezone.utc),
@@ -67,7 +76,7 @@ class SmartScheduler:
             is_capacity_exceeded=is_exceeded,
             total_pending_records=len(pending_records),
             scheduled_now_count=len(scheduled_now),
-            deferred_count=len(deferred),
+            deferred_count=deferred_count,
             schedule=schedule_items
         )
 

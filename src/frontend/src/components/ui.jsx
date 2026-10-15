@@ -42,6 +42,20 @@ export function ActionTag({ action }) {
   return <span className={`action action-${cls}`}>{label}</span>;
 }
 
+const TIER_CLASS = {
+  HOT: 'low', STANDARD: 'low',
+  WARM: 'medium', STANDARD_IA: 'medium',
+  COLD: 'high', GLACIER: 'high',
+  ARCHIVE: 'critical', DEEP_ARCHIVE: 'critical',
+};
+
+export function TierTag({ tier }) {
+  const key = (tier || '').toUpperCase();
+  const label = { STANDARD: 'HOT / Standard', STANDARD_IA: 'WARM / IA', GLACIER: 'COLD / Glacier', DEEP_ARCHIVE: 'ARCHIVE' }[key] || key || '—';
+  const cls = TIER_CLASS[key] || 'medium';
+  return <span className={`tag tag-${cls}`}>{label}</span>;
+}
+
 /* ---------- Layout pieces ---------- */
 
 export function PageHeader({ title, subtitle, actions }) {
