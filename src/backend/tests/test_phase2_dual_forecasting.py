@@ -86,3 +86,28 @@ def test_independent_target_separation():
     # Backup volume prediction remains stable and separate
     backup_after = prediction_service.get_latest_prediction().predicted_backup_volume_mb
     assert backup_before == backup_after
+
+
+def test_access_demand_fallback_on_non_positive_lstm(monkeypatch):
+    """Verify fallback to adapter when LSTM predicts non-positive values."""
+    from app.services.ml_service import ml_service
+    import numpy as np
+
+    class MockNonPositiveModel:
+        def predict(self, x, verbose=0):
+            return np.array([[-5.0]])
+
+    monkeypatch.setattr(ml_service, "access_model", MockNonPositiveModel())
+    monkeypatch.setattr(ml_service, "is_access_initialized", True)
+
+    pred_count, pred_volume, pred_emergency, model_ver = ml_service.predict_access_demand(
+        current_access_count=1200,
+        current_access_volume_mb=15400.0,
+        recent_counts=[1000, 1100, 1200],
+        emergency_ratio=0.05
+    )
+
+    assert model_ver == "access-demand-adapter-v1"
+    assert pred_count > 0
+    assert pred_volume > 0.0
+    assert pred_emergency >= 0

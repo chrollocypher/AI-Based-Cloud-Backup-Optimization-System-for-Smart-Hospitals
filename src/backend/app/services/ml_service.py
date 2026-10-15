@@ -163,8 +163,13 @@ class MLService:
                 pred = self.access_model.predict(scaled.reshape(1, LOOKBACK, 1), verbose=0)
                 pred_volume = max(0.0, float(self.access_scaler.inverse_transform(pred)[0, 0]))
                 pred_count = max(0, int(round(pred_volume / max(avg_size, 1e-6))))
-                pred_emergency = max(0, int(round(pred_count * emergency_ratio)))
-                return pred_count, round(pred_volume, 2), pred_emergency, "lstm-access-ml-v1"
+                if pred_count > 0 and pred_volume > 0.0:
+                    pred_emergency = max(0, int(round(pred_count * emergency_ratio)))
+                    return pred_count, round(pred_volume, 2), pred_emergency, "lstm-access-ml-v1"
+                logger.warning(
+                    f"Access LSTM predicted non-positive output (count={pred_count}, volume={pred_volume}). "
+                    "Falling back to statistical adapter."
+                )
             except Exception as e:
                 logger.warning(f"Error in access-demand model inference: {e}. Falling back to adapter.")
 
