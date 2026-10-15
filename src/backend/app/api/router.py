@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import health, records, predictions, schedule, backups, dashboard, monitoring
+from app.api.routes import health, records, predictions, schedule, backups, dashboard, monitoring, storage, retrieval, orchestration
 
 api_router = APIRouter()
 
@@ -10,3 +10,6 @@ api_router.include_router(schedule.router)
 api_router.include_router(backups.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(monitoring.router)
+api_router.include_router(storage.router)
+api_router.include_router(retrieval.router)
+api_router.include_router(orchestration.router)

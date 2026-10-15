@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # DynamoDB Table Names
     DYNAMODB_TABLE_RECORDS: str = "SmartHospitalRecords"
     DYNAMODB_TABLE_JOBS: str = "SmartHospitalBackupJobs"
+    DYNAMODB_TABLE_ACCESS_EVENTS: str = "SmartHospitalAccessEvents"
+    DYNAMODB_TABLE_RETRIEVALS: str = "SmartHospitalRetrievalJobs"
 
     # Step Functions & SageMaker
     STEP_FUNCTION_ARN: str = "arn:aws:states:us-east-1:123456789012:stateMachine:SmartHospitalBackupPipeline"
@@ -24,6 +26,12 @@ class Settings(BaseSettings):
 
     # Operational Thresholds
     CAPACITY_THRESHOLD_MB: float = 10000.0
+
+    # ML Model & Dataset Settings
+    MODEL_PATH: str = "src/ml_model/synthetic_ehr/models/best_synthea_backup_lstm.keras"
+    ACCESS_MODEL_PATH: str = "src/ml_model/synthetic_ehr/models/best_synthea_access_lstm.keras"
+    WORKLOAD_DATA_PATH: str = "dataset/synthea/processed/synthea_hourly_workload.csv"
+    SYNTHEA_ACCESS_LOGS_PATH: str = "dataset/synthea/processed/synthea_ehr_access_logs.csv"
 
     model_config = SettingsConfigDict(
         env_file=".env",

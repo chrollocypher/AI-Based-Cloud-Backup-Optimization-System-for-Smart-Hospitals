@@ -1,0 +1,8 @@
+Metric,Policy A (Proposed),Policy B (Static S3 Standard),Policy C (Conventional Naive Aging)
+Monthly Cost ($ USD),0.8453,0.8588,0.5026
+Cost Savings vs Static (%),1.57%,0.0%,41.47%
+Avg Emergency Latency (ms),654.29 ms,92.68 ms,114405.29 ms
+Critical Availability (%),99.65%,100.0%,36.46%
+Emergency SLA Violations (<500ms),2,0,359
+Cache Hit Rate (%),92.51%,0.0%,0.0%
+Backup Success Rate (%),100.0%,100.0%,100.0%

@@ -5,12 +5,15 @@ venv/
 env/
 ENV/
 
+# Environment variables & secrets
+.env
+*.env
+backend/.env
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
 
 # Distribution / packaging
@@ -38,7 +41,7 @@ share/python-wheels/
 htmlcov/
 
 # Jupyter Notebook checkpoints
-.ipynb_checkpoints
+.ipynb_checkpoints/
 
 # IDE and OS files
 .vscode/

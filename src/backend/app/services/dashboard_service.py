@@ -42,25 +42,38 @@ class DashboardService:
         )
 
     def get_workload_timeseries(self) -> List[WorkloadPoint]:
-        """Generates historical vs. predicted workload time-series data points."""
-        now = datetime.now(timezone.utc)
-        points: List[WorkloadPoint] = []
+        """Builds chart series from Synthea historical backup volume plus the latest LSTM forecast."""
+        from app.services.ml_service import ml_service
 
-        # Generate 6 hourly data points for dashboard chart
-        for i in range(5, -1, -1):
-            ts_time = now - timedelta(hours=i)
-            time_str = ts_time.strftime("%H:00")
-            base_gb = 7.5 + (i % 3) * 0.8
-            pred_gb = round(base_gb * 1.12, 2)
+        now = datetime.now(timezone.utc)
+        latest_pred = prediction_service.get_latest_prediction()
+        hist = list(ml_service.historical_data) if ml_service.historical_data is not None else []
+        while len(hist) < 5:
+            hist.insert(0, 1200.0)
+        hist = hist[-5:]
+
+        points: List[WorkloadPoint] = []
+        for i, val_mb in enumerate(hist):
+            ts_time = now - timedelta(hours=5 - i)
+            actual_gb = round(float(val_mb) / 1024.0, 2)
             points.append(
                 WorkloadPoint(
-                    timestamp=time_str,
-                    actual_gb=round(base_gb, 2),
-                    predicted_gb=pred_gb
+                    timestamp=ts_time.strftime("%H:00"),
+                    actual_gb=actual_gb,
+                    predicted_gb=round(actual_gb * 1.05, 2),
                 )
             )
 
-        return points
+        predicted_gb = round(latest_pred.predicted_backup_volume_mb / 1024.0, 2)
+        current_gb = points[-1].actual_gb if points else 0.0
+        points.append(
+            WorkloadPoint(
+                timestamp=now.strftime("%H:00"),
+                actual_gb=current_gb,
+                predicted_gb=predicted_gb,
+            )
+        )
+        return points[-6:]
 
     def get_monitoring_status(self) -> MonitoringStatusResponse:
         """Returns overall system component health and monitoring telemetry."""

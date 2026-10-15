@@ -99,3 +99,60 @@ def test_list_and_get_records():
 def test_get_nonexistent_record():
     response = client.get("/api/v1/records/NONEXISTENT")
     assert response.status_code == 404
+
+
+def test_access_event_ingestion_and_history():
+    client.post("/api/v1/records", json={
+        "record_id": "EHR_ACCESS_1",
+        "patient_id": "P_SYN_777",
+        "record_type": "EHR",
+        "department": "Emergency",
+        "data_size_mb": 12.0,
+        "access_frequency": 1
+    })
+    event = {
+        "event_id": "EVT_777",
+        "record_id": "EHR_ACCESS_1",
+        "patient_id": "P_SYN_777",
+        "record_type": "EHR",
+        "department": "Emergency",
+        "access_type": "READ",
+        "access_frequency": 2,
+        "data_size_mb": 12.0,
+        "criticality": "CRITICAL",
+        "storage_tier": "STANDARD",
+        "emergency_flag": False
+    }
+    ingest = client.post("/api/v1/records/access-events", json=event)
+    assert ingest.status_code == 200
+    assert ingest.json()["ingested"] == 1
+
+    history = client.get("/api/v1/records/patient/P_SYN_777/access-history")
+    assert history.status_code == 200
+    assert history.json()[0]["event_id"] == "EVT_777"
+
+    rec_history = client.get("/api/v1/records/EHR_ACCESS_1/access-history")
+    assert rec_history.status_code == 200
+    assert len(rec_history.json()) == 1
+
+    rec = client.get("/api/v1/records/EHR_ACCESS_1").json()
+    assert rec["access_frequency"] == 2
+
+
+def test_retrieve_alias_on_record():
+    client.post("/api/v1/records", json={
+        "record_id": "EHR_RET_1",
+        "record_type": "EHR",
+        "department": "Emergency",
+        "data_size_mb": 10.0,
+        "access_frequency": 4
+    })
+    resp = client.post("/api/v1/records/EHR_RET_1/retrieve", json={
+        "is_emergency": True,
+        "department": "Emergency",
+        "reason": "Trauma"
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["record_id"] == "EHR_RET_1"
+    assert data["sla_met"] is True
