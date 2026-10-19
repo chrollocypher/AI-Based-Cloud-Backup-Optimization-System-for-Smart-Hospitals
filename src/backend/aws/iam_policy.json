@@ -5,6 +5,8 @@
       "Sid": "LeastPrivilegeS3Access",
       "Effect": "Allow",
       "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
         "s3:PutObject",
         "s3:GetObject",
         "s3:GetObjectVersion",
@@ -13,16 +15,19 @@
         "s3:ListBucket"
       ],
       "Resource": [
-        "arn:aws:s3:::smart-hospital-ehr",
-        "arn:aws:s3:::smart-hospital-ehr/*",
-        "arn:aws:s3:::smart-hospital-backups",
-        "arn:aws:s3:::smart-hospital-backups/*"
+        "arn:aws:s3:::smart-hospital-ehr*",
+        "arn:aws:s3:::smart-hospital-ehr*/*",
+        "arn:aws:s3:::smart-hospital-backups*",
+        "arn:aws:s3:::smart-hospital-backups*/*"
       ]
     },
     {
       "Sid": "LeastPrivilegeDynamoDBAccess",
       "Effect": "Allow",
       "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:DescribeTable",
         "dynamodb:PutItem",
         "dynamodb:GetItem",
         "dynamodb:UpdateItem",
@@ -32,10 +37,7 @@
         "dynamodb:BatchWriteItem"
       ],
       "Resource": [
-        "arn:aws:dynamodb:*:*:table/SmartHospitalRecords",
-        "arn:aws:dynamodb:*:*:table/SmartHospitalBackupJobs",
-        "arn:aws:dynamodb:*:*:table/SmartHospitalAccessEvents",
-        "arn:aws:dynamodb:*:*:table/SmartHospitalRetrievalJobs"
+        "arn:aws:dynamodb:*:*:table/SmartHospital*"
       ]
     },
     {
@@ -57,6 +59,7 @@
       "Action": [
         "cloudwatch:PutMetricData",
         "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics",
         "cloudwatch:DescribeAlarms",
         "cloudwatch:PutMetricAlarm"
       ],

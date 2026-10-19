@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -34,10 +35,19 @@ class Settings(BaseSettings):
     SYNTHEA_ACCESS_LOGS_PATH: str = "dataset/synthea/processed/synthea_ehr_access_logs.csv"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")), ".env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
 
 settings = Settings()
+
+# Automatically propagate AWS credentials from settings into os.environ for all boto3 clients
+if settings.AWS_ACCESS_KEY_ID:
+    os.environ["AWS_ACCESS_KEY_ID"] = settings.AWS_ACCESS_KEY_ID
+if settings.AWS_SECRET_ACCESS_KEY:
+    os.environ["AWS_SECRET_ACCESS_KEY"] = settings.AWS_SECRET_ACCESS_KEY
+if settings.AWS_REGION:
+    os.environ["AWS_DEFAULT_REGION"] = settings.AWS_REGION
+

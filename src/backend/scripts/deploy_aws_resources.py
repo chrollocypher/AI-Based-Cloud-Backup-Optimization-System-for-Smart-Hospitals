@@ -103,9 +103,22 @@ def main(dry_run: bool = False):
         print("\n[SUCCESS] Simulated cloud deployment completed successfully.")
         return {"status": "SUCCESS", "mode": "SIMULATION"}
 
-    s3 = boto3.client("s3", region_name=settings.AWS_REGION)
-    ddb = boto3.client("dynamodb", region_name=settings.AWS_REGION)
-    cw = boto3.client("cloudwatch", region_name=settings.AWS_REGION)
+    # Populate environment so boto3 default chain and clients inherit credentials
+    if settings.AWS_ACCESS_KEY_ID:
+        os.environ["AWS_ACCESS_KEY_ID"] = settings.AWS_ACCESS_KEY_ID
+    if settings.AWS_SECRET_ACCESS_KEY:
+        os.environ["AWS_SECRET_ACCESS_KEY"] = settings.AWS_SECRET_ACCESS_KEY
+    if settings.AWS_REGION:
+        os.environ["AWS_DEFAULT_REGION"] = settings.AWS_REGION
+
+    boto3_kwargs = {"region_name": settings.AWS_REGION}
+    if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+        boto3_kwargs["aws_access_key_id"] = settings.AWS_ACCESS_KEY_ID
+        boto3_kwargs["aws_secret_access_key"] = settings.AWS_SECRET_ACCESS_KEY
+
+    s3 = boto3.client("s3", **boto3_kwargs)
+    ddb = boto3.client("dynamodb", **boto3_kwargs)
+    cw = boto3.client("cloudwatch", **boto3_kwargs)
 
     deploy_s3_bucket(s3, "smart-hospital-ehr", settings.AWS_REGION, dry_run=False)
     deploy_dynamodb_tables(ddb, dry_run=False)
